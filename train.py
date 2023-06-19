@@ -33,9 +33,11 @@ def seed_everything(seed=0):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
+
 def get_instance(module, name, config, *args):
     # GET THE CORRESPONDING CLASS / FCT
-    return getattr(module, config[name]['type'])(*args, **config[name]['args'])    #getattar(类名，属性）（方法）
+    return getattr(module, config[name]['type'])(*args, **config[name]['args'])  # getattar(类名，属性）（方法）
+
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -44,14 +46,17 @@ def setup(rank, world_size):
     # initialize the process group
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
+
 def cleanup():
     dist.destroy_process_group()
+
 
 def run_demo(demo_fn, world_size, config):
     mp.spawn(demo_fn,
              args=(world_size, config,),
              nprocs=world_size,
              join=True)
+
 
 def main(rank, world_size, config):
     setup(rank, world_size)
@@ -72,20 +77,20 @@ def main(rank, world_size, config):
 
     # 加载数据集
     train_loader = General(data_dir=cfg.train_loader.data_dir,
-                              batch_size=cfg.batch_size,
-                              split=cfg.train_loader.split,
-                              num_workers=cfg.train_loader.num_workers,
-                              num_classes=num_classes,
-                              mode='random_mask',
-                              augment=False)
+                           batch_size=cfg.batch_size,
+                           split=cfg.train_loader.split,
+                           num_workers=cfg.train_loader.num_workers,
+                           num_classes=num_classes,
+                           mode='random_mask',
+                           augment=False)
 
     val_loader = General(data_dir=cfg.val_loader.data_dir,
-                            batch_size=cfg.batch_size,
-                            split=cfg.val_loader.split,
-                            num_workers=cfg.val_loader.num_workers,
-                            num_classes=num_classes,
-                            mode='random_mask',
-                            augment=False)
+                         batch_size=cfg.batch_size,
+                         split=cfg.val_loader.split,
+                         num_workers=cfg.val_loader.num_workers,
+                         num_classes=num_classes,
+                         mode='random_mask',
+                         augment=False)
 
     # 优化器
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
@@ -110,11 +115,11 @@ def main(rank, world_size, config):
     loss_fn = LSCE_GDLoss(ignore_index=255)
 
     for epoch in range(1, cfg.trainer.epochs):
-        train_epoch(rank, cfg, train_loader, model, optimizer, loss_fn, scaler, epoch, num_classes,writer)
+        train_epoch(rank, cfg, train_loader, model, optimizer, loss_fn, scaler, epoch, num_classes, writer)
         lr_scheduler.step()
         if rank == 0:
             if epoch % cfg.trainer.val_per_epochs == 0:
-                evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes,writer)
+                evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer)
 
             if epoch % cfg.trainer.save_period == 0:
                 checkpoint_dir = os.path.join(cfg.trainer.save_dir, cfg.name, start_time)
@@ -122,7 +127,8 @@ def main(rank, world_size, config):
                     os.mkdir(checkpoint_dir)
                 save_checkpoint(epoch, model, optimizer, cfg, checkpoint_dir, save_best=False)
 
-def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, num_classes,writer):
+
+def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, num_classes, writer):
     train_loader = loaders
     model.train()
     wrt_mode, wrt_step = 'train', 0
@@ -184,7 +190,8 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
     }
     return log
 
-def evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes,writer):
+
+def evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer):
     model.eval()
 
     tbar = tqdm(val_loader, ncols=130)
@@ -200,7 +207,7 @@ def evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes,writer):
             labels = labels.to(rank)
             masks = masks.to(rank)
 
-            outs = model((images, masks))
+            outs = model.infernce((images, masks))
             loss = loss_fn(outs, labels)
 
             # 记录loss
@@ -213,7 +220,7 @@ def evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes,writer):
 
             if rank == 0:
                 tbar.set_description(
-                    'TRAIN ({}) | Loss: {:.3f} | Acc {:.2f} mIoU {:.2f}'.format(
+                    'VAL ({}) | Loss: {:.3f} | Acc {:.2f} mIoU {:.2f}'.format(
                         epoch, recorder.total_loss.average,
                         pixAcc, mIoU))
 

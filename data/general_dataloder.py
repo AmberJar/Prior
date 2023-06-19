@@ -1,7 +1,8 @@
 from glob import glob
 import os
 from torch.utils.data import Dataset, DataLoader
-from helper.mask_helper import grid_mask,block_mask,random_mask
+from helper.mask_helper import grid_mask, block_mask, random_mask
+
 ignore_label = 255
 import numpy as np
 import cv2
@@ -13,12 +14,13 @@ from .augmentor import transform_aug
 from torch.utils.data.distributed import DistributedSampler
 
 
-
 class BaseDataSet(Dataset):
     def __init__(self, root, split, mean, std, mode, num_classes, random_aug=True):
         self.root = root
         self.num_classes = num_classes
         self.split = split
+        if self.split == 'test':
+            self.split = 'val'
         self.mean = mean
         self.std = std
         self.random_aug = random_aug
@@ -90,7 +92,6 @@ class BaseDataSet(Dataset):
 
 class General(DataLoader):
     def __init__(self, data_dir, batch_size, split, num_workers, num_classes, mode='random_mask', augment=False):
-
         self.MEAN = [0.286896, 0.283892, 0.325133]
         self.STD = [0.142422, 0.142357, 0.146488]
 
@@ -105,11 +106,14 @@ class General(DataLoader):
         }
 
         self.dataset = BaseDataSet(**kwargs)
-        self.sampler = DistributedSampler(self.dataset, shuffle=True)
+        if split != 'test':
+            self.sampler = DistributedSampler(self.dataset, shuffle=True)
+        else:
+            self.sampler = None
         super(General, self).__init__(self.dataset,
-                                         batch_size=batch_size,
-                                         num_workers=num_workers,
-                                         shuffle=False,
-                                         pin_memory=True,
-                                         sampler=self.sampler,
-                                         drop_last=True)
+                                      batch_size=batch_size,
+                                      num_workers=num_workers,
+                                      shuffle=False,
+                                      pin_memory=True,
+                                      sampler=self.sampler,
+                                      drop_last=True)

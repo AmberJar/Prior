@@ -12,28 +12,6 @@ from models.hrnet import HRNet_W48_OCR
 from torchvision import models as baseline
 
 
-class ResNet50Seg(nn.Module):
-    def __init__(self, num_classes, **_):
-        super(ResNet50Seg, self).__init__()
-        model = baseline.resnet50(weights='ResNet50_Weights.DEFAULT')
-        self.initial = list(model.children())[:4]
-        self.initial = nn.Sequential(*self.initial)
-
-        # encoder
-        self.layer1 = model.layer1
-        self.layer2 = model.layer2
-        self.layer3 = model.layer3
-        self.layer4 = model.layer4
-
-    def forward(self, x):
-        x = self.initial(x)
-        x1 = self.layer1(x)
-        x2 = self.layer2(x1)
-        x3 = self.layer3(x2)
-        x4 = self.layer4(x3)
-
-        return x4
-
 class PriorNet(nn.Module):
     def __init__(self, num_classes, **_):
         super(PriorNet, self).__init__()
@@ -41,8 +19,6 @@ class PriorNet(nn.Module):
         self.weight_path = '/data/fpc/projects/Prior/pretrained/hrnet_w48_ocr_1_latest.pth'
         self.load_model()
         self.backbone_freeze()
-        # self.backbone = ResNet50Seg(num_classes=num_classes)
-        # print(self.backbone)
 
         self.num_classes = num_classes
         in_channels = 4  # image + mask
@@ -54,6 +30,23 @@ class PriorNet(nn.Module):
         # first step 求backbone的结果
         bk_res, _ = self.baseline(image)
 
+        # second step 这里对fusion的图片做处理
+        fusion_features = torch.cat([image, label], dim=1)
+
+        # third step 这里做压缩和重建
+        features = self.unet(fusion_features)
+
+        # fourth step 这里做和原来结果的融合
+        # features = features + bk_res
+
+        return features + bk_res
+
+    def inference(self, x):
+        image = x[0]
+
+        # first step 求backbone的结果
+        bk_res, _ = self.baseline(image)
+        label = bk_res
         # second step 这里对fusion的图片做处理
         fusion_features = torch.cat([image, label], dim=1)
 
