@@ -1,0 +1,61 @@
+{
+    "name": "PriorNet",
+    "num_classes": 19,
+    "batch_size": 1,
+
+    "arch": {
+        "type": "PriorNet",
+        "args": {
+            "backbone": "Resnet50"
+        }
+    },
+
+    "train_loader": {
+        "data_dir": "/data/fpc/data/Cityspaces",
+        "split": "train",
+        "num_workers": 0
+    },
+
+    "val_loader": {
+        "data_dir": "/data/fpc/data/Cityspaces",
+        "split": "val",
+        "num_workers": 0
+    },
+
+    "optimizer": {
+        "type": "AdamW",
+        "lr": 1e-4,
+        "weight_decay": 1e-4,
+        "betas": [0.8, 0.99]
+    },
+
+    "loss": "LSCE_GDLoss",
+    "ignore_index": 255,
+    "lr_scheduler": {
+        "type": "WarmUpLR_CosineAnnealing",
+        "warmup_epochs": 3
+    },
+
+    "trainer": {
+        "epochs": 2000,
+        "fp16": true,
+        "save_dir": "/data/fpc/saved/",
+        "save_period": 1,
+
+        "monitor": "max Mean_IoU",
+        "early_stop": 300,
+
+        "tensorboard": true,
+        "log_dir": "saved/runs",
+        "log_per_iter": 1,
+
+        "val": true,
+        "val_per_epochs": 1
+    },
+
+    "ema": {
+        "use": false,
+        "weight": 0.999
+    }
+}
+
