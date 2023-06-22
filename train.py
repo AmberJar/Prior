@@ -79,11 +79,6 @@ def main(rank, world_size, config):
     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     # 加载数据集
-    args = {
-        'data_dir': cfg.train_loader.data_dir,
-        'batch_size': cfg.batch_size,
-        'num_classes': num_classes,
-    }
     train_loader = General(data_dir=cfg.train_loader.data_dir,
                            batch_size=cfg.batch_size,
                            split=cfg.train_loader.split,
@@ -100,8 +95,8 @@ def main(rank, world_size, config):
                          mode='random_mask',
                          augment=False)
 
-    train_loader = get_instance(data, 'train_loader', cfg, args)
-    val_loader = get_instance(data, 'val_loader', cfg, args)
+    train_loader = get_instance(data, 'train_loader', cfg)
+    val_loader = get_instance(data, 'val_loader', cfg)
 
     # 优化器
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),

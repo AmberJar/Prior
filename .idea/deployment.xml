@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="user@192.168.128.111:22 (38)" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="fangpengcheng@192.168.128.27:22 (75)" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
       <paths name="fangpengcheng@192.168.128.27:22">
         <serverdata>
@@ -496,6 +496,20 @@
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="fangpengcheng@192.168.128.27:22 (74)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/data/fpc/projects/hirestnet" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="fangpengcheng@192.168.128.27:22 (75)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/data/fpc/projects/hirestnet" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

@@ -1,7 +1,7 @@
 {
-    "name": "PriorNet",
-    "num_classes": 19,
-    "batch_size": 8,
+    "name": "Vaihingen",
+    "num_classes": 6,
+    "batch_size": 4,
 
     "model": {
         "type": "HRNet_W48_OCR",
@@ -12,13 +12,13 @@
     },
 
     "train_loader": {
-        "data_dir": "/data/fpc/data/Cityscapes_512_1024/Cityscapes",
+        "data_dir": "/data/fpc/data/Vaihingen/seed0_512_1578",
         "split": "train",
         "num_workers": 8
     },
 
     "val_loader": {
-        "data_dir": "/data/fpc/data/Cityscapes_512_1024/Cityscapes",
+        "data_dir": "/data/fpc/data/Vaihingen/seed0_512_1578",
         "split": "val",
         "num_workers": 8
     },
@@ -40,7 +40,7 @@
     "trainer": {
         "epochs": 2000,
         "fp16": true,
-        "save_dir": "/data/fangpengcheng/saved/",
+        "save_dir": "/data/fpc/saved/",
         "save_period": 1,
 
         "monitor": "max Mean_IoU",
