@@ -14,7 +14,7 @@ from utils.recorder import Recorder
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Inference')
-    parser.add_argument('-c', '--config', default='./config/config_init.json', type=str,
+    parser.add_argument('-c', '--config', default='./config/config_prior.json', type=str,
                         help='The config used to train the model')
     parser.add_argument('-m', '--model',
                         default='./pretrained/hrnet_w48_ocr_1_latest.pth',
@@ -63,7 +63,7 @@ def predicts(model, device, cfg):
 
 def predict():
     args = parse_arguments()
-    config = './config/config_init.json'
+    config = './config/config_prior.json'
     cfg = get_hparams(config)
 
     # Model

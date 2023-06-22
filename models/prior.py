@@ -13,10 +13,10 @@ from torchvision import models as baseline
 
 
 class PriorNet(nn.Module):
-    def __init__(self, num_classes, **_):
+    def __init__(self, num_classes, *args):
         super(PriorNet, self).__init__()
         self.baseline = HRNet_W48_OCR(num_classes=num_classes, backbone="hrnet48")
-        self.weight_path = '/data/fpc/projects/Prior/pretrained/hrnet_w48_ocr_1_latest.pth'
+        self.weight_path = './pretrained/hrnet_w48_ocr_1_latest.pth'
         self.load_model()
         self.backbone_freeze()
 

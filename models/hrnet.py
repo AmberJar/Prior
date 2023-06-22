@@ -1,13 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.hrnet_spatial_ocr_block import  SpatialOCR_ASP_Module
+from models.hrnet_spatial_ocr_block import SpatialOCR_ASP_Module
 from models.hrnet_backbone import HRNetBackbone
 from itertools import chain
 
 import sys
+
+
 class HRNet_W48_OCR(nn.Module):
-    def __init__(self, num_classes, backbone, freeze_bn=False, freeze_backbone=False, **_):
+    def __init__(self, num_classes, backbone, weight_path=None, freeze_bn=False, freeze_backbone=False, **_):
         super(HRNet_W48_OCR, self).__init__()
         self.num_classes = num_classes
         self.backbone = HRNetBackbone(backbone)
@@ -58,9 +60,8 @@ class HRNet_W48_OCR(nn.Module):
         out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
         return out_aux, out
 
-
     def get_backbone_params(self):
-            return self.backbone.parameters()
+        return self.backbone.parameters()
 
     def get_decoder_params(self):
         return chain(self.asp_ocr_head.parameters(), self.cls_head.parameters(), self.aux_head.parameters())

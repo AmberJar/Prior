@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -8,6 +9,7 @@ import torch.optim as optim
 import torch.multiprocessing as mp
 import random
 import models
+import data
 import numpy as np
 import time
 from tqdm import tqdm
@@ -36,7 +38,7 @@ def seed_everything(seed=0):
 
 def get_instance(module, name, config, *args):
     # GET THE CORRESPONDING CLASS / FCT
-    return getattr(module, config[name]['type'])(*args, **config[name]['args'])  # getattar(类名，属性）（方法）
+    return getattr(module, getattr(config, name).type)(*args, **getattr(config, name).args)  # getattar(类名，属性）（方法）
 
 
 def setup(rank, world_size):
@@ -71,11 +73,17 @@ def main(rank, world_size, config):
         os.mkdir(net_path)
 
     # 加载模型，简易版
-    model = models.PriorNet(num_classes=num_classes).to(rank)
+    model = get_instance(models, 'model', cfg, num_classes).to(rank)
+
     model = DDP(model, device_ids=[rank])
     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     # 加载数据集
+    args = {
+        'data_dir': cfg.train_loader.data_dir,
+        'batch_size': cfg.batch_size,
+        'num_classes': num_classes,
+    }
     train_loader = General(data_dir=cfg.train_loader.data_dir,
                            batch_size=cfg.batch_size,
                            split=cfg.train_loader.split,
@@ -91,6 +99,9 @@ def main(rank, world_size, config):
                          num_classes=num_classes,
                          mode='random_mask',
                          augment=False)
+
+    train_loader = get_instance(data, 'train_loader', cfg, args)
+    val_loader = get_instance(data, 'val_loader', cfg, args)
 
     # 优化器
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
@@ -260,7 +271,7 @@ def save_checkpoint(epoch, model, optimizer, cfg, checkpoint_dir, save_best=Fals
 
 
 def start():
-    config = './config/config_init.json'
+    config = './config/config_hires.json'
     n_gpus = torch.cuda.device_count()
     run_demo(main, world_size=n_gpus, config=config)
 
