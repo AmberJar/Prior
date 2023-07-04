@@ -199,6 +199,6 @@ class HiResNetDataLoader(DataLoader):
                                                  batch_size=batch_size,
                                                  num_workers=num_workers,
                                                  shuffle=False,
-                                                 pin_memory=True,
+                                                 pin_memory=False,
                                                  sampler=self.sampler,
                                                  drop_last=True)
