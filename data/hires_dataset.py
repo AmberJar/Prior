@@ -60,7 +60,7 @@ def val_aug(img, mask, mean, std):
 
 
 class HirResNetDataset(Dataset):
-    def __init__(self, root, mean, std, num_classes, split='val', mosaic_ratio=0.25,
+    def __init__(self, root, mean, std, num_classes, mosaic_ratio, split='val',
                  img_size=ORIGIN_IMG_SIZE):
         self.root = root
         self.img_suffix = '.tif'
@@ -83,17 +83,17 @@ class HirResNetDataset(Dataset):
 
     def __getitem__(self, index):
         p_ratio = random.random()
-        if p_ratio > self.mosaic_ratio or self.mode == 'val' or self.mode == 'test':
+        if p_ratio >= self.mosaic_ratio or self.mode == 'val' or self.mode == 'test':
             img, mask = self.load_img_and_mask(index)
             if self.transform:
                 img, mask = self.transform(img, mask, self.mean, self.std)
         else:
             img, mask = self.load_mosaic_img_and_mask(index)
             img, mask = np.array(img), np.array(mask)
-            aug = get_val_transform(self.mean, self.std)(image=img, mask=mask)
-            img, mask = aug['image'], aug['mask']
-            # if self.transform:
-            #     img, mask = self.transform(img, mask, self.mean, self.std)
+            # aug = get_val_transform(self.mean, self.std)(image=img, mask=mask)
+            # img, mask = aug['image'], aug['mask']
+            if self.transform:
+                img, mask = self.transform(img, mask, self.mean, self.std)
 
         img = torch.from_numpy(img).permute(2, 0, 1).float()
         mask = torch.from_numpy(mask).long()
@@ -177,7 +177,7 @@ class HirResNetDataset(Dataset):
 
 
 class HiResNetDataLoader(DataLoader):
-    def __init__(self, data_dir, batch_size, split, num_workers, num_classes, mode='random_mask', augment=False):
+    def __init__(self, data_dir, batch_size, split, num_workers, num_classes, mosaic_ratio=0.25, mode='random_mask', augment=False):
         self.MEAN = [0.463633, 0.316652, 0.320528]
         self.STD = [0.203334, 0.135546, 0.140651]
 
@@ -187,6 +187,7 @@ class HiResNetDataLoader(DataLoader):
             'mean': self.MEAN,
             'std': self.STD,
             'num_classes': num_classes,
+            'mosaic_ratio': mosaic_ratio,
         }
 
         self.dataset = HirResNetDataset(**kwargs)
@@ -199,6 +200,6 @@ class HiResNetDataLoader(DataLoader):
                                                  batch_size=batch_size,
                                                  num_workers=num_workers,
                                                  shuffle=False,
-                                                 pin_memory=False,
+                                                 pin_memory=True,
                                                  sampler=self.sampler,
                                                  drop_last=True)

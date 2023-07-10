@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from models.hiresnet_config import MODEL_CONFIGS
 from timm.models.layers import trunc_normal_, DropPath
 from timm.models.registry import register_model
-
+from blocks import CA
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -15,73 +15,15 @@ def conv3x3(in_planes, out_planes, stride=1):
                      padding=1, bias=False)
 
 
-class h_sigmoid(nn.Module):
-    def __init__(self, inplace=True):
-        super(h_sigmoid, self).__init__()
-        self.relu = nn.ReLU6(inplace=inplace)
-
-    def forward(self, x):
-        return self.relu(x + 3) / 6
-
-
-class h_swish(nn.Module):
-    def __init__(self, inplace=True):
-        super(h_swish, self).__init__()
-        self.sigmoid = h_sigmoid(inplace=inplace)
-
-    def forward(self, x):
-        return x * self.sigmoid(x)
-
-
-class CA(nn.Module):
-    def __init__(self, inp, reduction=32):
-        self.channels = 640
-        super(CA, self).__init__()
-        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
-        self.pool_w = nn.AdaptiveAvgPool2d((1, None))
-
-        mip = max(8, inp // reduction)
-
-        self.conv1 = nn.Conv2d(inp, mip, kernel_size=1, stride=1, padding=0)
-        self.bn1 = nn.BatchNorm2d(mip)
-        self.act = nn.GELU()
-
-        self.conv_h = nn.Conv2d(mip, inp, kernel_size=1, stride=1, padding=0)
-        self.conv_w = nn.Conv2d(mip, inp, kernel_size=1, stride=1, padding=0)
-
-    def forward(self, x):
-        identity = x
-
-        n, c, h, w = x.size()
-        x_h = self.pool_h(x)
-        x_w = self.pool_w(x).permute(0, 1, 3, 2)
-
-        y = torch.cat([x_h, x_w], dim=2)
-        y = self.conv1(y)
-        y = self.bn1(y)
-        y = self.act(y)
-
-        x_h, x_w = torch.split(y, [h, w], dim=2)
-        x_w = x_w.permute(0, 1, 3, 2)
-
-        a_h = self.conv_h(x_h).sigmoid()
-        a_w = self.conv_w(x_w).sigmoid()
-
-        out = identity * a_w * a_h
-
-        return out
-
-
-class _BasicBlock(nn.Module):
+class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, bn_type=None, bn_momentum=0.1, drop_path=0.):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, bn_type=None, bn_momentum=0.1, drop_path=0.,dilation=1):
         super(BasicBlock, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(num_features=planes, momentum=bn_momentum)
         self.relu = nn.GELU()
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        # self.bn2 = nn.BatchNorm2d(num_features=planes, momentum=bn_momentum)
         self.downsample = downsample
         self.stride = stride
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
@@ -107,44 +49,46 @@ class _BasicBlock(nn.Module):
         return out
 
 
-class BasicBlock(nn.Module):
-    expansion = 1
-
-    def __init__(self, inplanes, planes, stride=1, downsample=None, bn_type=None, bn_momentum=0.1, drop_path=0.,
-                 layer_scale_init_value=1e-6):
-        super().__init__()
-        # self.dwconv = nn.Conv2d(inplanes, planes, kernel_size=3, padding=1, groups=inplanes)  # depthwise conv
-        self.dwconv = nn.Conv2d(inplanes, planes, kernel_size=3, padding=1, bias=False)
-        self.norm = nn.BatchNorm2d(num_features=planes, momentum=0.1)
-        # self.pwconv1 = nn.Linear(planes, 4 * planes)  # pointwise/1x1 convs, implemented with linear layers
-        self.pwconv1 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
-        self.act = nn.GELU()
-        # self.pwconv2 = nn.Linear(4 * planes, planes)
-        self.pwconv2 = nn.Conv2d(4 * planes, planes, kernel_size=1, bias=False)
-        self.gamma = nn.Parameter(layer_scale_init_value * torch.ones(planes),
-                                  requires_grad=True) if layer_scale_init_value > 0 else None
-        self.downsample = downsample
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
-    def forward(self, x):
-        input = x
-
-        x = self.dwconv(x)
-        x = self.norm(x)
-        x = self.pwconv1(x)
-        x = self.act(x)
-        x = self.pwconv2(x)
-
-        x = x.permute(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
-        if self.gamma is not None:
-            x = self.gamma * x
-        x = x.permute(0, 3, 1, 2)  # (N, H, W, C) -> (N, C, H, W)
-
-        if self.downsample is not None:
-            input = self.downsample(input)
-
-        x = input + self.drop_path(x)
-        return x
+# class BasicBlock(nn.Module):
+#     expansion = 1
+#
+#     def __init__(self, inplanes, planes, stride=1, downsample=None, bn_type=None, bn_momentum=0.1, drop_path=0.,
+#                  layer_scale_init_value=1e-6):
+#         super().__init__()
+#         # self.dwconv = nn.Conv2d(inplanes, planes, kernel_size=3, padding=1, groups=inplanes)  # depthwise conv
+#         self.dwconv = nn.Conv2d(inplanes, planes, kernel_size=3, padding=1, bias=False)
+#         self.norm = nn.BatchNorm2d(num_features=planes, momentum=0.1)
+#         # self.ca = CA(planes)
+#         # self.pwconv1 = nn.Linear(planes, 4 * planes)  # pointwise/1x1 convs, implemented with linear layers
+#         self.pwconv1 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+#         self.act = nn.GELU()
+#         # self.pwconv2 = nn.Linear(4 * planes, planes)
+#         self.pwconv2 = nn.Conv2d(4 * planes, planes, kernel_size=1, bias=False)
+#         self.gamma = nn.Parameter(layer_scale_init_value * torch.ones(planes),
+#                                   requires_grad=True) if layer_scale_init_value > 0 else None
+#         self.downsample = downsample
+#         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+#
+#     def forward(self, x):
+#         input = x
+#
+#         x = self.dwconv(x)
+#         x = self.norm(x)
+#         # x = x + self.ca(x)
+#         x = self.pwconv1(x)
+#         x = self.act(x)
+#         x = self.pwconv2(x)
+#
+#         x = x.permute(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
+#         if self.gamma is not None:
+#             x = self.gamma * x
+#         x = x.permute(0, 3, 1, 2)  # (N, H, W, C) -> (N, C, H, W)
+#
+#         if self.downsample is not None:
+#             input = self.downsample(input)
+#
+#         x = input + self.drop_path(x)
+#         return x
 
 
 class Bottleneck(nn.Module):
@@ -198,13 +142,21 @@ class HighResolutionModule(nn.Module):
         self.num_inchannels = num_inchannels
         self.fuse_method = fuse_method
         self.num_branches = num_branches
-
         self.multi_scale_output = multi_scale_output
 
+        # self.ca_list = self._make_ca(self.num_branches, self.num_inchannels)
         self.branches = self._make_branches(
             num_branches, blocks, num_blocks, num_channels, bn_type=bn_type, bn_momentum=bn_momentum)
         self.fuse_layers = self._make_fuse_layers(bn_type=bn_type, bn_momentum=bn_momentum)
         self.relu = nn.GELU()
+
+    def _make_ca(self, num_branches, num_inchannels):
+        ca_list = []
+
+        for i in range(num_branches):
+            ca_list.append(CA(num_inchannels[i]))
+
+        return nn.ModuleList(ca_list)
 
     def _check_branches(self, num_branches, blocks, num_blocks,
                         num_inchannels, num_channels):
@@ -368,6 +320,8 @@ class HighResolutionModule(nn.Module):
                         align_corners=True)
                 else:
                     y = y + self.fuse_layers[i][j](x[j])
+
+            # y = y + self.ca_list[i](y)
             x_fuse.append(self.relu(y))
 
         return x_fuse

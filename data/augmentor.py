@@ -31,13 +31,13 @@ def transform_aug(height, width, mean, std, p=0.5):
             #     ]
             # ),
 
-            # A.OneOf(
-            #     [
-            #         A.HorizontalFlip(p=p),
-            #         A.Flip(p=p),
-            #         A.ShiftScaleRotate(p=p)
-            #     ]
-            # ),
+            A.OneOf(
+                [
+                    A.HorizontalFlip(p=p),
+                    A.Flip(p=p),
+                    A.ShiftScaleRotate(p=p)
+                ]
+            ),
 
             A.OneOf(
                 [

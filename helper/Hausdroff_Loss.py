@@ -1,147 +1,219 @@
-"""
-compute haudorff loss for binary segmentation
-https://arxiv.org/pdf/1904.10030v1.pdf
-"""
+import random
 
 import torch
-from torch import nn
-from scipy.ndimage import distance_transform_edt
 import numpy as np
-import threading
+from typing import Callable, Optional, Union
+from torch.nn.modules.loss import _Loss
+from scipy.ndimage import distance_transform_edt as distance
+from monai.utils import LossReduction
+from monai.networks import one_hot
 import warnings
-warnings.filterwarnings("ignore")
+from helper.distance_transform import distance_transform
 
 
-def get_single_edt(idx, segmentation, segmentation_outs):
-    pos = segmentation[idx]
-    test = np.zeros(pos.shape)
-    pos = np.logical_or(pos, test)  # 或
-    neg = np.logical_not(pos) # 非
-    dst_pos = distance_transform_edt(pos)
-    dst_neg = distance_transform_edt(neg)
-    dst = dst_neg + dst_pos
-    segmentation_outs[idx] = dst
-    return
+def compute_dtm(img_gt, out_shape):
+    """
+    compute the distance transform map of foreground in binary mask
+    input: segmentation, shape = (batch_size, x, y, z)
+    output: the foreground Distance Map (SDM)
+    dtm(x) = 0; x in segmentation boundary
+             inf|x-y|; x in segmentation
+    """
+
+    fg_dtm = np.zeros(out_shape)
+
+    for b in range(out_shape[0]):  # batch size
+        # ignore background ops choosed before
+        for c in range(out_shape[1]):
+            posmask = img_gt[b][c].astype(np.bool)
+            if posmask.any():
+                posdis = distance(posmask)
+                fg_dtm[b][c] = posdis
+
+    return fg_dtm
 
 
-def compute_edts_forhdloss_thread(segmentation):
-    segmentation_outs = np.zeros_like(segmentation)*1.
-    idxs = [i for i in range(segmentation.shape[0])]
-    threads = []
-    for idx in idxs:
-        # 实例化n个对象，target=目标函数名，args=目标函数参数(元组格式)
-        t = threading.Thread(target=get_single_edt, args=(idx,segmentation,segmentation_outs,))
-        threads.append(t)
-        t.start()
-    # 等待所有子线程结束再运行主线程
-    [thread.join() for thread in threads]
-    return segmentation_outs
+def compute_dtm_gpu(img_gt, out_shape, kernel_size=5):
+    """
+    compute the distance transform map of foreground in binary mask
+    input: segmentation, shape = (batch_size, x, y, z)
+    output: the foreground Distance Map (SDM)
+    dtm(x) = 0; x in segmentation boundary
+             inf|x-y|; x in segmentation
+    """
+    if len(out_shape) == 5:  # B,C,H,W,D
+        fg_dtm = torch.cat([distance_transform(1 - img_gt[b].float(), kernel_size=kernel_size).unsqueeze(0) \
+                            for b in range(out_shape[0])], axis=0)
+    else:
+        fg_dtm = distance_transform(1 - img_gt.float(), kernel_size=kernel_size)
 
-# def get_distance_transform_weight(segmentation):
-#     pos = [ele for ele in segmentation]
-#     neg = [ele for ele in 1-segmentation]
-#     array_pos = np.stack(map(distance_transform_edt, pos))
-#     array_neg = np.stack(map(distance_transform_edt, neg))
-#     dis = array_pos + array_neg
-#     del pos, neg, array_pos, array_neg
-#     gc.collect()
-#     return dis
+    fg_dtm[~torch.isfinite(fg_dtm)] = kernel_size
+    return fg_dtm
 
 
-def compute_edts_forhdloss(segmentation):
-    res = np.zeros(segmentation.shape)
-    for i in range(segmentation.shape[0]):
-        posmask = segmentation[i]
-        negmask = 1-posmask
-        res[i] = distance_transform_edt(posmask) + distance_transform_edt(negmask)
-    return res
+def hd_loss(seg_soft, gt, seg_dtm, gt_dtm):
+    """
+    compute huasdorff distance loss for binary segmentation
+    input: seg_soft: softmax results,  shape=(b,2,x,y,z)
+           gt: ground truth, shape=(b,x,y,z)
+           seg_dtm: segmentation distance transform map; shape=(b,2,x,y,z)
+           gt_dtm: ground truth distance transform map; shape=(b,2,x,y,z)
+    output: boundary_loss; sclar
+    """
+
+    delta_s = (seg_soft - gt.float()) ** 2
+    s_dtm = seg_dtm ** 2
+    g_dtm = gt_dtm ** 2
+    dtm = s_dtm + g_dtm
+    if len(delta_s.shape) == 5:  # B,C,H,W,D
+        multipled = torch.einsum('bcxyz, bcxyz->bcxyz', delta_s, dtm)
+    elif len(delta_s.shape) == 4:  # B,C,H,W
+        multipled = torch.einsum('bcxy, bcxy->bcxy', delta_s, dtm)
+    else:
+        raise RuntimeError("Got Error dim in HD Loss {}".format(delta_s.shape))
+    # multipled = multipled.mean()
+
+    return multipled
 
 
-class HDDTBinaryLoss(nn.Module):
-    def __init__(self, ignore_index=-1):
-        super(HDDTBinaryLoss, self).__init__()
-        self.ignore_index = ignore_index
-
-    def forward(self, preds, target):
+class HDLoss(_Loss):
+    def __init__(
+            self,
+            include_background: bool = True,
+            to_onehot_y: bool = False,
+            sigmoid: bool = False,
+            softmax: bool = False,
+            other_act: Optional[Callable] = None,
+            reduction: Union[LossReduction, str] = LossReduction.MEAN,
+            batch: bool = False,
+    ) -> None:
         """
-        preds: (batch_size, 2, x,y)
-        target: ground truth, shape: (batch_size, x,y)
+        Args:
+            include_background: if False, channel index 0 (background category) is excluded from the calculation.
+                if the non-background segmentations are small compared to the total image size they can get overwhelmed
+                by the signal from the background so excluding it in such cases helps convergence.
+            to_onehot_y: whether to convert `y` into the one-hot format. Defaults to False.
+            sigmoid: if True, apply a sigmoid function to the prediction.
+            softmax: if True, apply a softmax function to the prediction.
+            other_act: if don't want to use `sigmoid` or `softmax`, use other callable function to execute
+                other activation layers, Defaults to ``None``. for example:
+                `other_act = torch.tanh`.
+            squared_pred: use squared versions of targets and predictions in the denominator or not.
+            jaccard: compute Jaccard Index (soft IoU) instead of dice or not.
+            reduction: {``"none"``, ``"mean"``, ``"sum"``}
+                Specifies the reduction to apply to the output. Defaults to ``"mean"``.
+
+               # - ``"none"``: no reduction will be applied.
+                - ``"mean"``: the sum of the output will be divided by the number of elements in the output.
+                - ``"sum"``: the output will be summed.
+
+            smooth_nr: a small constant added to the numerator to avoid zero.
+            smooth_dr: a small constant added to the denominator to avoid nan.
+            batch: whether to sum the intersection and union areas over the batch dimension before the dividing.
+                Defaults to False, a Dice loss value is computed independently from each item in the batch
+                before any `reduction`.
+
+        Raises:
+            TypeError: When ``other_act`` is not an ``Optional[Callable]``.
+            ValueError: When more than 1 of [``sigmoid=True``, ``softmax=True``, ``other_act is not None``].
+                Incompatible values.
+
         """
-        if self.ignore_index not in range(target.min(), target.max()):
-            if (target == self.ignore_index).sum() > 0:
-                target[target == self.ignore_index] = target.min()
+        super().__init__(reduction=LossReduction(reduction).value)
+        if other_act is not None and not callable(other_act):
+            raise TypeError(f"other_act must be None or callable but is {type(other_act).__name__}.")
+        if int(sigmoid) + int(softmax) + int(other_act is not None) > 1:
+            raise ValueError("Incompatible values: more than 1 of [sigmoid=True, softmax=True, other_act is not None].")
+        self.include_background = include_background
+        self.to_onehot_y = to_onehot_y
+        self.sigmoid = sigmoid
+        self.softmax = softmax
+        self.other_act = other_act
+        self.batch = batch
 
-        gt = target.type(torch.float32)
+    def forward(self, input: torch.Tensor, target: torch.Tensor, progress_model: bool=True) -> torch.Tensor:
+        """
+        Args:
+            input: the shape should be BNH[WD], where N is the number of classes.
+            target: the shape should be BNH[WD] or B1H[WD], where N is the number of classes.
+            progress_model: test random
 
-        pc = torch.softmax(preds, dim=1)
-        pc = torch.argmax(pc, dim=1) * 1.
+        Raises:
+            AssertionError: When input and target (after one hot transform if set)
+                have different shapes.
+            ValueError: When ``self.reduction`` is not one of ["mean", "sum", "none"].
+
+        Example:
+            >>> from monai.losses.dice import *  # NOQA
+            >>> import torch
+            >>> from monai.losses.dice import DiceLoss
+            >>> B, C, H, W = 7, 5, 3, 2
+            >>> input = torch.rand(B, C, H, W)
+            >>> target_idx = torch.randint(low=0, high=C - 1, size=(B, H, W)).long()
+            >>> target = one_hot(target_idx[:, None, ...], num_classes=C)
+            >>> self = DiceLoss(reduction='none')
+            >>> loss = self(input, target)
+            >>> assert np.broadcast_shapes(loss.shape, input.shape) == input.shape
+        """
+        print(target.shape)
+        if len(target.shape) == 3:
+            target = torch.unsqueeze(target, dim=1)
+
+        if progress_model:
+            C = target.shape[0]
+            pick_number = random.randint(0, C - 1)
+            target[target != pick_number] = 0
+            target[pick_number] = 1
+
+            input = torch.cat((input[0], input[pick_number]))
+
+        if self.sigmoid:
+            input = torch.sigmoid(input)
+
+        n_pred_ch = input.shape[1]
+        if self.softmax:
+            if n_pred_ch == 1:
+                warnings.warn("single channel prediction, `softmax=True` ignored.")
+            else:
+                input = torch.softmax(input, 1)
+
+        if self.other_act is not None:
+            input = self.other_act(input)
+
+        if self.to_onehot_y:
+            if n_pred_ch == 1:
+                warnings.warn("single channel prediction, `to_onehot_y=True` ignored.")
+            else:
+                target = one_hot(target, num_classes=n_pred_ch)
+
+        if not self.include_background:
+            if n_pred_ch == 1:
+                warnings.warn("single channel prediction, `include_background=False` ignored.")
+            else:
+                # if skipping background, removing first channel
+                target = target[:, 1:]
+                input = input[:, 1:]
+
+        if target.shape != input.shape:
+            raise AssertionError(f"ground truth has different shape ({target.shape}) from input ({input.shape})")
 
         with torch.no_grad():
-            # pc_dist = compute_edts_forhdloss(pc.cpu().numpy())
-            # gt_dist = compute_edts_forhdloss(gt.cpu().numpy())
-            pc_dist = compute_edts_forhdloss_thread(pc.cpu().numpy()) * 1.
-            gt_dist = compute_edts_forhdloss_thread(gt.cpu().numpy()) * 1.
+            # defalut using compute_dtm; however, compute_dtm01 is also worth to try;
+            # gt_dtm = compute_dtm01(target.cpu().numpy(), input.shape, input.device.index)
+            gt_dtm = compute_dtm_gpu(target > 0.5, input.shape)
+            # seg_dtm = compute_dtm01(input.cpu().numpy()>0.5, input.shape, input.device.index)
+            seg_dtm = compute_dtm_gpu(input > 0.5, input.shape)
+        loss_hd = hd_loss(input, target, seg_dtm, gt_dtm)
+        if self.reduction == LossReduction.MEAN.value:
+            loss_hd = torch.mean(loss_hd)  # the batch and channel average
+        elif self.reduction == LossReduction.SUM.value:
+            loss_hd = torch.sum(loss_hd)  # sum over the batch and channel dims
+        # elif self.reduction == LossReduction.NONE.value:
+        #    # If we are not computing voxelwise loss components at least
+        #    # make sure a none reduction maintains a broadcastable shape
+        #    broadcast_shape = list(loss_hd.shape[0:2]) + [1] * (len(input.shape) - 2)
+        #    loss_hd = loss_hd.view(broadcast_shape)
+        else:
+            raise ValueError(f'Unsupported reduction: {self.reduction}, available options are ["mean", "sum", "none"].')
 
-        pred_error = ((gt - pc) ** 2)**.5
-        dist = (pc_dist ** 2 + gt_dist ** 2)**.5
-
-        dist = torch.from_numpy(dist)
-        if dist.device != pred_error.device:
-            dist = dist.to(pred_error.device).type(torch.float32)
-        multipled = torch.pow(torch.einsum("bxy,bxy->bxy", pred_error, dist) + 1e-9, .5)
-        hd_loss = multipled.mean()
-
-        return hd_loss
-
-
-if __name__ == '__main__':
-    import cv2
-    from matplotlib import pyplot as plt
-    from glob import glob
-    import time
-
-    files = sorted(glob("*.tif"))
-    images = []
-    for f in files*100:
-        img = cv2.imread(f, 0)
-        img[img>0]=1
-        img = np.expand_dims(img, axis=0)
-        images.append(img)
-
-    target = torch.from_numpy(np.concatenate(images, axis=0))
-    print("target", target.shape)
-    # =======================================================================================================
-    print("test result is same or not.")
-    t1 = time.time()
-    res1 = compute_edts_forhdloss_thread(target)
-    print("compute_edts_forhdloss_thread spend",time.time() - t1)
-
-    t2 = time.time()
-    res2 = compute_edts_forhdloss(target)
-    print("compute_edts_forhdloss spend", time.time() - t1)
-    print(np.sum(res2-res1))
-
-    dist = np.concatenate((res1[0], res2[0], res1[1], res2[1]), axis=1)
-    dist2 = np.concatenate((res1[2], res2[2], res1[3], res2[3]), axis=1)
-    dist3 = np.concatenate((res1[4], res2[4], res1[5], res2[5]), axis=1)
-    dist4 = np.concatenate((res1[6], res2[6], res1[7], res2[7]), axis=1)
-    dist = np.concatenate([dist, dist2, dist3, dist4], axis=0)
-
-    plt.imshow(dist)
-    plt.show()
-
-    # =======================================================================================================
-    # 对比多线程和forloop花费时间
-    # outs = torch.from_numpy(np.concatenate(images, axis=0))
-    # outs = outs.unsqueeze(1)
-    # outs = torch.cat([1-outs, outs], dim=1).type(torch.float32)
-    # fun = HDDTBinaryLoss()
-    # import time
-    # t1 = time.time()
-    # for i in range(10):
-    #     b = fun(outs, target)
-    # print(time.time() - t1)
-    # print(b)
-    # compute_edts_forhdloss_thread: 19.619222402572632
-    # compute_edts_forhdloss:        38.723613262176514
-    # =======================================================================================================
+        return loss_hd

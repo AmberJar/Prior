@@ -15,10 +15,11 @@ class HiResNet(nn.Module):
         self.num_classes = num_classes
 
         # extra added layers
+        # 336
         in_channels = 336  # 48 + 96 + 192 + 384
         # 64 + 128 + 256 + 512
 
-        self.asp_ocr_head = SpatialOCR_ASP_Module(features=336,
+        self.asp_ocr_head = SpatialOCR_ASP_Module(features=in_channels,
                                                   hidden_features=256,
                                                   out_features=256,
                                                   dilations=(24, 48, 72),

@@ -72,7 +72,7 @@ class HRNet_W48_OCR(nn.Module):
 
 
 if __name__ == '__main__':
-    model = HRNet_W48_ASPOCR(num_classes=16, backbone='hrnet48')
+    model = HRNet_W48_OCR(num_classes=16, backbone='hrnet48')
     from torchinfo import summary
 
     summary(model, input_size=(6, 3, 256, 256))

@@ -3,6 +3,8 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from sklearn.utils import class_weight
+# from Hausdroff_Loss import HDDTBinaryLoss
+from helper.hddtbinaryloss import HDDTBinaryLoss
 import math
 
 
@@ -124,11 +126,13 @@ class LSCE_GDLoss(nn.Module):
     def __init__(self, smooth=1, reduction='mean', ignore_index=255,
                  weight=None):
         super(LSCE_GDLoss, self).__init__()
-        self.gdice = GeneralizedDiceLoss(ignore_index=ignore_index)
+        # self.gdice = GeneralizedDiceLoss(ignore_index=ignore_index)
         self.LSCE = LabelSmoothSoftmaxCE(ignore_index=ignore_index)
+        # self.hdloss = HDDTBinaryLoss(ignore_index=ignore_index)
 
     def forward(self, output, target):
         LSCE_loss = self.LSCE(output, target)
-        gdice_loss = self.gdice(output, target)
+        # gdice_loss = self.gdice(output, target)
+        # hd_loss = self.hdloss(output, target)
 
-        return LSCE_loss + gdice_loss
+        return LSCE_loss
