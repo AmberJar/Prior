@@ -2,7 +2,6 @@ import os
 import shutil
 import sys
 import tempfile
-#os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -26,6 +25,8 @@ from data.cityscapes_mask_dataloader import CityScapes
 from data.general_dataloder import General
 from data.hires_dataset import HiResNetDataLoader
 import datetime
+
+from LibMTL.weighting.RLW import RLW
 
 
 def seed_everything(seed=0):
@@ -97,7 +98,7 @@ def main(rank, world_size, config):
         os.mkdir(net_path)
 
     # 加载模型，简易版
-    model = models.HRNet_W48_OCR(num_classes=num_classes, backbone='hrnet48').to(rank)
+    model = models.HiResNet(num_classes=num_classes, backbone='hrnet48', use_pretrained_backbone=cfg.use_checkpoint).to(rank)
 
     # 计算参数量
     total = sum([param.nelement() for param in model.parameters()])
@@ -118,7 +119,7 @@ def main(rank, world_size, config):
                                       split=cfg.train_loader.split,
                                       num_workers=cfg.train_loader.num_workers,
                                       num_classes=num_classes,
-                                      mosaic_ratio=0,
+                                      mosaic_ratio=0.25,
                                       mode='random_mask',
                                       augment=False)
 
@@ -148,7 +149,7 @@ def main(rank, world_size, config):
         writer_dir = os.path.join(cfg.trainer.log_dir, cfg.name, start_times)
 
         writer_dir = writer_dir.replace('\\', '/')
-        shutil.copy(config, writer_dir)
+        # shutil.copy(config, writer_dir)
         writer = tensorboard.SummaryWriter(writer_dir)
     scaler = GradScaler(enabled=cfg.trainer.fp16)
     loss_fn = LSCE_GDLoss(ignore_index=255)
@@ -156,10 +157,11 @@ def main(rank, world_size, config):
     for epoch in range(0, cfg.trainer.epochs):
         train_epoch(rank, cfg, train_loader, model, optimizer, loss_fn, scaler, epoch, num_classes, writer)
         lr_scheduler.step()
-        if rank == 0:
-            if epoch % cfg.trainer.val_per_epochs == 0:
-                evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer)
 
+        if epoch % cfg.trainer.val_per_epochs == 0:
+            evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer)
+
+        if rank == 0:
             if epoch % cfg.trainer.save_period == 0:
                 checkpoint_dir = os.path.join(cfg.trainer.save_dir, cfg.name, start_time)
                 if not os.path.exists(checkpoint_dir):
@@ -183,7 +185,7 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
     # 数据记录初始化
     recorder = Recorder()
     recorder.reset_metrics()
-
+    RLW_fn = RLW(device=rank)
     for index, (images, labels) in enumerate(tbar):
         images = images.to(rank)
         labels = labels.to(rank)
@@ -214,16 +216,16 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
                         out_aux, output = model(images)
                         # output = model(images)
                         # compute output
-                        loss = loss_fn(output, target_a) * lam + loss_fn(output, target_b) * (1. - lam)
-                        loss_aux = loss_fn(out_aux, target_a) * lam + loss_fn(out_aux, target_b) * (1. - lam)
+                        loss = RLW_fn(loss_fn(output, target_a)) * lam + RLW_fn(loss_fn(output, target_b)) * (1. - lam)
+                        loss_aux = RLW_fn(loss_fn(out_aux, target_a)) * lam + RLW_fn(loss_fn(out_aux, target_b)) * (1. - lam)
                         loss = alpha * loss_aux + loss
                 else:
                     # compute output
                     with autocast(enabled=cfg.trainer.fp16):
                         out_aux, output = model(images)
                         # output = model(images)
-                        loss_aux = loss_fn(out_aux, labels)
-                        loss = loss_fn(output, labels)
+                        loss_aux = RLW_fn(loss_fn(out_aux, labels))
+                        loss = RLW_fn(loss_fn(output, labels))
                         loss = alpha * loss_aux + loss
             else:
                 with autocast(enabled=cfg.trainer.fp16):

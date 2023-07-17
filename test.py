@@ -17,6 +17,7 @@ def seed_everything(seed=0):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
+
 if __name__ == '__main__':
     seed_everything(0)
     pred = torch.rand(size=(6, 7, 256, 256)).cuda()

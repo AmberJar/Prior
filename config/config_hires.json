@@ -1,24 +1,24 @@
 {
-    "name": "Vaihingen",
+    "name": "Potsdam",
     "num_classes": 6,
     "batch_size": 4,
+    "use_checkpoint": "",
 
     "model": {
         "type": "HRNet_W48_OCR",
         "args": {
-            "backbone": "hrnet48",
-            "weight_path": ""
+            "backbone": "hrnet48"
         }
     },
 
     "train_loader": {
-        "data_dir": "/data/fpc/data/Vaihingen/seed0_512_1578",
+        "data_dir": "/data/fpc/data/seed0_512",
         "split": "train",
         "num_workers": 0
     },
 
     "val_loader": {
-        "data_dir": "/data/fpc/data/Vaihingen/seed0_512_1578",
+        "data_dir": "/data/fpc/data/seed0_512",
         "split": "val",
         "num_workers": 0
     },
@@ -35,13 +35,13 @@
     "alpha": 1,
     "lr_scheduler": {
         "type": "WarmUpLR_CosineAnnealing",
-        "warmup_epochs": 0
+        "warmup_epochs": 5
     },
 
     "trainer": {
-        "epochs": 300,
+        "epochs": 400,
         "fp16": true,
-        "cutmix": false,
+        "cutmix": true,
         "save_dir": "/data/fpc/saved/",
         "save_period": 1,
 

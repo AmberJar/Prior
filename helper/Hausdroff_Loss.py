@@ -86,6 +86,7 @@ class HDLoss(_Loss):
             other_act: Optional[Callable] = None,
             reduction: Union[LossReduction, str] = LossReduction.MEAN,
             batch: bool = False,
+            num_classes: int = 2
     ) -> None:
         """
         Args:
@@ -130,6 +131,7 @@ class HDLoss(_Loss):
         self.softmax = softmax
         self.other_act = other_act
         self.batch = batch
+        self.num_classes = num_classes
 
     def forward(self, input: torch.Tensor, target: torch.Tensor, progress_model: bool=True) -> torch.Tensor:
         """
@@ -155,17 +157,15 @@ class HDLoss(_Loss):
             >>> loss = self(input, target)
             >>> assert np.broadcast_shapes(loss.shape, input.shape) == input.shape
         """
-        print(target.shape)
         if len(target.shape) == 3:
             target = torch.unsqueeze(target, dim=1)
-
-        if progress_model:
-            C = target.shape[0]
-            pick_number = random.randint(0, C - 1)
-            target[target != pick_number] = 0
-            target[pick_number] = 1
-
-            input = torch.cat((input[0], input[pick_number]))
+        #
+        # if progress_model:
+        #     pick_number = random.randint(0, self.num_classes - 2)
+        #     target[target != pick_number] = 0
+        #     target[target == pick_number] = 1
+        #
+        #     input = torch.stack((input[:, 0, ...], input[:, pick_number, ...]), dim=1)
 
         if self.sigmoid:
             input = torch.sigmoid(input)
@@ -191,8 +191,8 @@ class HDLoss(_Loss):
                 warnings.warn("single channel prediction, `include_background=False` ignored.")
             else:
                 # if skipping background, removing first channel
-                target = target[:, 1:]
-                input = input[:, 1:]
+                target = target[:, :-1]
+                input = input[:, :-1]
 
         if target.shape != input.shape:
             raise AssertionError(f"ground truth has different shape ({target.shape}) from input ({input.shape})")

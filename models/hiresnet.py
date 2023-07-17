@@ -6,10 +6,11 @@ import torch.nn.functional as F
 from models.hiresnet_spatial_ocr_block import BNReLU, SpatialOCR_ASP_Module
 from models.hiresnet_backbone import HRNetBackbone
 from itertools import chain
+from collections import OrderedDict
 
 
 class HiResNet(nn.Module):
-    def __init__(self, num_classes, backbone, freeze_bn=False, freeze_backbone=False, use_pretrained_backbone=False, pretrained_path=None, **_):
+    def __init__(self, num_classes, backbone, freeze_bn=False, use_pretrained_backbone=False, **_):
         super(HiResNet, self).__init__()
         self.backbone = HRNetBackbone(backbone)
         self.num_classes = num_classes
@@ -29,8 +30,7 @@ class HiResNet(nn.Module):
         self.cls_head = nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=False)
 
         if use_pretrained_backbone:
-            # print('success load pretrained weights')
-            self._load_pretrained_model(_pretrained_weights=pretrained_path)
+            self._load_checkpoint(use_pretrained_backbone)
 
         self.aux_head = nn.Sequential(
             nn.Conv2d(in_channels, 512, kernel_size=3, stride=1, padding=1),
@@ -79,3 +79,27 @@ class HiResNet(nn.Module):
         state_dict.update(model_dict)
         print('sucess')
         self.backbone.load_state_dict(state_dict, strict=False)
+
+    def _load_checkpoint(self, checkpoint_path):
+        print('start loading model: {}'.format(checkpoint_path))
+        checkpoint = torch.load(checkpoint_path, map_location=torch.device('cuda'))
+        # checkpoint = checkpoint['state_dict']
+        # from collections import OrderedDict
+        # del_list_1 = ['cls_head.weight', 'aux_head.2.weight']
+        del_list_2 = ["module.encoder_q.fc1.0.weight",
+                      "module.encoder_q.fc1.0.bias",
+                      "module.encoder_q.fc1.2.weight",
+                      "module.encoder_q.fc1.2.bias"]
+
+        new_state_dict = OrderedDict()
+        for k, v in checkpoint['state_dict'].items():
+            if k.startswith('module.encoder_q.'):
+                # name = k[7:]  # 去掉 `module.`
+                name = k.replace("module.encoder_q.backbone.", "", 1)
+                if name in del_list_2:
+                    continue
+                new_state_dict[name] = v
+
+        self.backbone.load_state_dict(new_state_dict, strict=True)
+
+        print('Model Load Success!')

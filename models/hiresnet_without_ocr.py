@@ -9,7 +9,7 @@ from itertools import chain
 
 
 class HiResNetWithoutOCR(nn.Module):
-    def __init__(self, num_classes, backbone, freeze_bn=False, freeze_backbone=False, use_pretrained_backbone=False, pretrained_path=None, **_):
+    def __init__(self, num_classes, backbone, use_pretrained_backbone=False, pretrained_path=None, **_):
         super(HiResNetWithoutOCR, self).__init__()
         self.backbone = HRNetBackbone(backbone)
         self.num_classes = num_classes

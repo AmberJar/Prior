@@ -90,10 +90,10 @@ class HirResNetDataset(Dataset):
         else:
             img, mask = self.load_mosaic_img_and_mask(index)
             img, mask = np.array(img), np.array(mask)
-            # aug = get_val_transform(self.mean, self.std)(image=img, mask=mask)
-            # img, mask = aug['image'], aug['mask']
-            if self.transform:
-                img, mask = self.transform(img, mask, self.mean, self.std)
+            aug = get_val_transform(self.mean, self.std)(image=img, mask=mask)
+            img, mask = aug['image'], aug['mask']
+            # if self.transform:
+            #     img, mask = self.transform(img, mask, self.mean, self.std)
 
         img = torch.from_numpy(img).permute(2, 0, 1).float()
         mask = torch.from_numpy(mask).long()
@@ -178,9 +178,13 @@ class HirResNetDataset(Dataset):
 
 class HiResNetDataLoader(DataLoader):
     def __init__(self, data_dir, batch_size, split, num_workers, num_classes, mosaic_ratio=0.25, mode='random_mask', augment=False):
-        self.MEAN = [0.463633, 0.316652, 0.320528]
-        self.STD = [0.203334, 0.135546, 0.140651]
+        # Vaihingen
+        # self.MEAN = [0.463633, 0.316652, 0.320528]
+        # self.STD = [0.203334, 0.135546, 0.140651]
 
+        # Potsdam
+        self.MEAN = [0.337606, 0.333821, 0.360477]
+        self.STD = [0.118292, 0.120414, 0.116505]
         kwargs = {
             'root': data_dir,
             'split': split,
@@ -200,6 +204,6 @@ class HiResNetDataLoader(DataLoader):
                                                  batch_size=batch_size,
                                                  num_workers=num_workers,
                                                  shuffle=False,
-                                                 pin_memory=True,
+                                                 pin_memory=False,
                                                  sampler=self.sampler,
                                                  drop_last=True)

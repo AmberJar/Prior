@@ -6,6 +6,7 @@ from sklearn.utils import class_weight
 # from Hausdroff_Loss import HDDTBinaryLoss
 from helper.hddtbinaryloss import HDDTBinaryLoss
 import math
+from helper import HDLoss
 
 
 #                        .::::.
@@ -126,13 +127,37 @@ class LSCE_GDLoss(nn.Module):
     def __init__(self, smooth=1, reduction='mean', ignore_index=255,
                  weight=None):
         super(LSCE_GDLoss, self).__init__()
-        # self.gdice = GeneralizedDiceLoss(ignore_index=ignore_index)
+        self.gdice = GeneralizedDiceLoss(ignore_index=ignore_index)
         self.LSCE = LabelSmoothSoftmaxCE(ignore_index=ignore_index)
-        # self.hdloss = HDDTBinaryLoss(ignore_index=ignore_index)
+        self.hdloss = HDLoss(include_background=False, to_onehot_y=True, softmax=True, batch=True)
 
     def forward(self, output, target):
         LSCE_loss = self.LSCE(output, target)
-        # gdice_loss = self.gdice(output, target)
-        # hd_loss = self.hdloss(output, target)
+        gdice_loss = self.gdice(output, target)
+        hd_loss = self.hdloss(output, target)
+        # print('LSCE', LSCE_loss)
+        # print('gdice_loss', gdice_loss)
+        # print('hd_loss', hd_loss)
 
-        return LSCE_loss
+        return LSCE_loss + gdice_loss + 0.4 * hd_loss
+        # return [LSCE_loss, gdice_loss, hd_loss]
+
+
+class LSCE_GDLoss_GLW(nn.Module):
+    def __init__(self, smooth=1, reduction='mean', ignore_index=255,
+                 weight=None):
+        super(LSCE_GDLoss_GLW, self).__init__()
+        self.gdice = GeneralizedDiceLoss(ignore_index=ignore_index)
+        self.LSCE = LabelSmoothSoftmaxCE(ignore_index=ignore_index)
+        self.hdloss = HDLoss(include_background=False, to_onehot_y=True, softmax=True, batch=True)
+
+    def forward(self, output, target):
+        LSCE_loss = self.LSCE(output, target)
+        gdice_loss = self.gdice(output, target)
+        hd_loss = self.hdloss(output, target)
+        # print('LSCE', LSCE_loss)
+        # print('gdice_loss', gdice_loss)
+        # print('hd_loss', hd_loss)
+
+        # return LSCE_loss + gdice_loss + 0.4 * hd_loss
+        return [LSCE_loss, gdice_loss, hd_loss]
