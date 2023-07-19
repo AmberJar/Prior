@@ -26,8 +26,6 @@ from data.general_dataloder import General
 from data.hires_dataset import HiResNetDataLoader
 import datetime
 
-from LibMTL.weighting.RLW import RLW
-
 
 def seed_everything(seed=0):
     random.seed(seed)
@@ -153,9 +151,14 @@ def main(rank, world_size, config):
         writer = tensorboard.SummaryWriter(writer_dir)
     scaler = GradScaler(enabled=cfg.trainer.fp16)
     loss_fn = LSCE_GDLoss(ignore_index=255)
+    best_mIoU = -1e-8
 
     for epoch in range(0, cfg.trainer.epochs):
-        train_epoch(rank, cfg, train_loader, model, optimizer, loss_fn, scaler, epoch, num_classes, writer)
+        mIoU = train_epoch(rank, cfg, train_loader, model, optimizer, loss_fn, scaler, epoch, num_classes, writer)
+        if mIoU > best_mIoU:
+            save_best = True
+        else:
+            save_best = False
         lr_scheduler.step()
 
         if epoch % cfg.trainer.val_per_epochs == 0:
@@ -166,7 +169,7 @@ def main(rank, world_size, config):
                 checkpoint_dir = os.path.join(cfg.trainer.save_dir, cfg.name, start_time)
                 if not os.path.exists(checkpoint_dir):
                     os.mkdir(checkpoint_dir)
-                save_checkpoint(epoch, model, optimizer, cfg, checkpoint_dir, save_best=False)
+                save_checkpoint(epoch, model, optimizer, cfg, checkpoint_dir, save_best=save_best)
 
 
 def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, num_classes, writer):
@@ -185,7 +188,7 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
     # 数据记录初始化
     recorder = Recorder()
     recorder.reset_metrics()
-    RLW_fn = RLW(device=rank)
+
     for index, (images, labels) in enumerate(tbar):
         images = images.to(rank)
         labels = labels.to(rank)
@@ -216,16 +219,16 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
                         out_aux, output = model(images)
                         # output = model(images)
                         # compute output
-                        loss = RLW_fn(loss_fn(output, target_a)) * lam + RLW_fn(loss_fn(output, target_b)) * (1. - lam)
-                        loss_aux = RLW_fn(loss_fn(out_aux, target_a)) * lam + RLW_fn(loss_fn(out_aux, target_b)) * (1. - lam)
+                        loss = loss_fn(output, target_a) * lam + loss_fn(output, target_b) * (1. - lam)
+                        loss_aux = loss_fn(out_aux, target_a) * lam + loss_fn(out_aux, target_b) * (1. - lam)
                         loss = alpha * loss_aux + loss
                 else:
                     # compute output
                     with autocast(enabled=cfg.trainer.fp16):
                         out_aux, output = model(images)
                         # output = model(images)
-                        loss_aux = RLW_fn(loss_fn(out_aux, labels))
-                        loss = RLW_fn(loss_fn(output, labels))
+                        loss_aux = loss_fn(out_aux, labels)
+                        loss = loss_fn(output, labels)
                         loss = alpha * loss_aux + loss
             else:
                 with autocast(enabled=cfg.trainer.fp16):
@@ -292,17 +295,15 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
                 writer.add_scalar(f'{wrt_mode}/loss', loss.item(), wrt_step)
 
     seg_metrics = recorder.get_seg_metrics(num_classes)
+    pixAcc, mIoU, Class_IoU = recorder.get_seg_metrics(num_classes).values()
+
     if rank == 0:
         for k, v in list(seg_metrics.items())[:-1]:
             writer.add_scalar(f'{wrt_mode}/{k}', v, wrt_step)
         for i, opt_group in enumerate(optimizer.param_groups):
             writer.add_scalar(f'{wrt_mode}/Learning_rate_{i}', opt_group['lr'], wrt_step)
 
-    log = {
-        'loss': recorder.total_loss.average,
-        **seg_metrics
-    }
-    return log
+    return mIoU
 
 
 def evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer):

@@ -681,14 +681,26 @@ def HRNetBackbone(arch):
 
 
 if __name__ == '__main__':
-    model = HRNetBackbone(arch='hrnet48')
-
     from torchinfo import summary
+    from fvcore.nn import FlopCountAnalysis
+    from torchvision import models
 
-    summary(model, input_size=(2, 3, 256, 256))
+    # model = HRNetBackbone(arch='hrnet48')
+    model = models.vgg16().cuda()
+    input_size = (1, 3, 1024, 1024)
+    summary(model, input_size=input_size)
 
-    x_in = torch.rand(size=(2, 3, 256, 256)).cuda()
-    outs = model(x_in)
+    x_in = torch.rand(size=input_size).cuda()
 
-    for out in outs:
-        print(out.shape)
+    f1 = FlopCountAnalysis(model, x_in)
+    # print(f1.total())
+    glops = f1.total() / 1E9 * 2
+    print(glops)
+
+    input = torch.tensor((3, 1024, 1024)).cuda()
+    from torchstat import stat
+    stat(model, input)
+    # outs = model(x_in)
+    #
+    # for out in outs:
+    #     print(out.shape)
