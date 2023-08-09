@@ -24,6 +24,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from data.cityscapes_mask_dataloader import CityScapes
 from data.general_dataloder import General
 from data.hires_dataset import HiResNetDataLoader
+from Dataloader.prefetcher import DataPrefetcher
 import datetime
 
 
@@ -102,6 +103,11 @@ def main(rank, world_size, config):
     total = sum([param.nelement() for param in model.parameters()])
     print('Number of parameter: % .2fM' % (total / 1e6))
 
+    if cfg.use_checkpoint:
+        print('GOGOGOGO')
+        checkpoint = torch.load(cfg.use_checkpoint, map_location='cuda:{}'.format(rank))
+        model.load_checkpoint(checkpoint)
+
     model = DDP(model, device_ids=[rank])
     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
@@ -129,6 +135,10 @@ def main(rank, world_size, config):
                                     mode='random_mask',
                                     augment=False)
 
+    # Prefetcher
+    # train_loader = DataPrefetcher(train_loader, device=rank)
+    # val_loader = DataPrefetcher(val_loader, device=rank)
+
     # 优化器
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                             lr=cfg.optimizer.lr,
@@ -152,7 +162,7 @@ def main(rank, world_size, config):
     scaler = GradScaler(enabled=cfg.trainer.fp16)
     loss_fn = LSCE_GDLoss(ignore_index=255)
     best_mIoU = -1e-8
-
+    save_best = True
     for epoch in range(0, cfg.trainer.epochs):
         mIoU = train_epoch(rank, cfg, train_loader, model, optimizer, loss_fn, scaler, epoch, num_classes, writer)
         if mIoU > best_mIoU:
@@ -161,8 +171,8 @@ def main(rank, world_size, config):
             save_best = False
         lr_scheduler.step()
 
-        if epoch % cfg.trainer.val_per_epochs == 0:
-            evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer)
+        # if epoch % cfg.trainer.val_per_epochs == 0:
+        #     evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer)
 
         if rank == 0:
             if epoch % cfg.trainer.save_period == 0:

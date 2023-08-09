@@ -29,9 +29,6 @@ class HiResNet(nn.Module):
 
         self.cls_head = nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=False)
 
-        if use_pretrained_backbone:
-            self._load_checkpoint(use_pretrained_backbone)
-
         self.aux_head = nn.Sequential(
             nn.Conv2d(in_channels, 512, kernel_size=3, stride=1, padding=1),
             BNReLU(512, bn_type=None),  # None
@@ -62,7 +59,9 @@ class HiResNet(nn.Module):
         return self.backbone.parameters()
 
     def get_decoder_params(self):
-        return chain(self.asp_ocr_head.parameters(), self.cls_head.parameters(), self.aux_head.parameters())
+        aux_decoder = chain(self.asp_ocr_head.parameters())
+        fine_decoder = chain(self.asp_ocr_head.parameters(), self.cls_head.parameters(), self.aux_head.parameters())
+        return [aux_decoder, fine_decoder]
 
     def freeze_bn(self):
         for module in self.modules():
@@ -80,9 +79,9 @@ class HiResNet(nn.Module):
         print('sucess')
         self.backbone.load_state_dict(state_dict, strict=False)
 
-    def _load_checkpoint(self, checkpoint_path):
-        print('start loading model: {}'.format(checkpoint_path))
-        checkpoint = torch.load(checkpoint_path, map_location=torch.device('cuda'))
+    def load_checkpoint(self, checkpoint):
+        print('start loading model!')
+        # checkpoint = torch.load(checkpoint_path, map_location='cuda:{}'.format(device))
         # checkpoint = checkpoint['state_dict']
         # from collections import OrderedDict
         # del_list_1 = ['cls_head.weight', 'aux_head.2.weight']

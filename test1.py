@@ -1,7 +1,8 @@
 from functools import reduce
+import tensorboard
 
-
-my_list = [2, 3, 5]
-
-result = reduce(lambda x, y: x * y, my_list)
-print(result) # 👉️ 30
+writer = tensorboard.SummaryWriter("./test")
+for i in range(1000):
+    # tf.summary.scalar(f'2*i', float(2*i), i)
+    # tf.summary.scalar(f'5*i', float(5 * i), i)
+    writer.add_scalar(f'5*i', float(5 * i), i)

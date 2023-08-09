@@ -1,6 +1,6 @@
 # LibMTL
 
-[![Documentation Status](https://readthedocs.org/projects/libmtl/badge/?version=latest)](https://libmtl.readthedocs.io/en/latest/?badge=latest) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/median-research-group/LibMTL/blob/main/LICENSE) [![PyPI version](https://badge.fury.io/py/LibMTL.svg)](https://badge.fury.io/py/LibMTL) [![Supported Python versions](https://img.shields.io/pypi/pyversions/LibMTL.svg?logo=python&logoColor=FFE873)](https://github.com/median-research-group/LibMTL) [![CodeFactor](https://www.codefactor.io/repository/github/median-research-group/libmtl/badge/main)](https://www.codefactor.io/repository/github/median-research-group/libmtl/overview/main)  ![Total lines](https://img.shields.io/tokei/lines/github/median-research-group/libmtl?color=red) [![arXiv](https://img.shields.io/badge/arXiv-2203.14338-b31b1b.svg)](https://arxiv.org/abs/2203.14338) [![coverage](tests/coverage.svg)](https://github.com/median-research-group/LibMTL)  ![visitors](https://visitor-badge.glitch.me/badge?page_id=median-research-group.LibMTL) [![Made With Love](https://img.shields.io/badge/Made%20With-Love-orange.svg)](https://github.com/median-research-group/LibMTL) 
+[![Documentation Status](https://readthedocs.org/projects/libmtl/badge/?version=latest)](https://libmtl.readthedocs.io/en/latest/?badge=latest) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/median-research-group/LibMTL/blob/main/LICENSE) [![PyPI version](https://badge.fury.io/py/LibMTL.svg)](https://badge.fury.io/py/LibMTL) [![Supported Python versions](https://img.shields.io/pypi/pyversions/LibMTL.svg?logo=python&logoColor=FFE873)](https://github.com/median-research-group/LibMTL) [![CodeFactor](https://www.codefactor.io/repository/github/median-research-group/libmtl/badge/main)](https://www.codefactor.io/repository/github/median-research-group/libmtl/overview/main)  ![Total lines](https://img.shields.io/tokei/lines/github/median-research-group/libmtl?color=red) [![arXiv](https://img.shields.io/badge/arXiv-2203.14338-b31b1b.svg)](https://arxiv.org/abs/2203.14338) [![coverage](./tests/coverage.svg)](https://github.com/median-research-group/LibMTL)  ![visitors](https://visitor-badge.glitch.me/badge?page_id=median-research-group.LibMTL) [![Made With Love](https://img.shields.io/badge/Made%20With-Love-orange.svg)](https://github.com/median-research-group/LibMTL) 
 
 ``LibMTL`` is an open-source library built on [PyTorch](https://pytorch.org/) for Multi-Task Learning (MTL). See the [latest documentation](https://libmtl.readthedocs.io/en/latest/) for detailed introductions and API instructions.
 
@@ -38,7 +38,7 @@
 
 ## Overall Framework
 
- ![framework](docs/docs/images/framework.png)
+ ![framework](./docs/docs/images/framework.png)
 
 Each module is introduced in [Docs](https://libmtl.readthedocs.io/en/latest/docs/user_guide/framework.html).
 
@@ -102,7 +102,7 @@ Each module is introduced in [Docs](https://libmtl.readthedocs.io/en/latest/docs
 3. Install `LibMTL`
    
    ```shell
-   cd LibMTL
+   cd LibMTL-main
    pip install -e .
    ```
 
@@ -116,7 +116,7 @@ The NYUv2 dataset we used is pre-processed by [mtan](https://github.com/lorenmt/
 
 ### Run a Model
 
-The complete training code for the NYUv2 dataset is provided in [examples/nyu](examples/nyu). The file [train_nyu.py](examples/nyu/train_nyu.py) is the main file for training on the NYUv2 dataset.
+The complete training code for the NYUv2 dataset is provided in [examples/nyu](./examples/nyu). The file [train_nyu.py](./examples/nyu/train_nyu.py) is the main file for training on the NYUv2 dataset.
 
 You can find the command-line arguments by running the following command.
 
@@ -159,4 +159,4 @@ We would like to thank the authors that release the public repositories (listed 
 
 ## License
 
-``LibMTL`` is released under the [MIT](LICENSE) license.
+``LibMTL`` is released under the [MIT](./LICENSE) license.

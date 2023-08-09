@@ -47,6 +47,7 @@ class CrossEntropyLoss2d(nn.Module):
 class GeneralizedDiceLoss(nn.Module):
     """Computes Generalized Dice Loss (GDL) as described in https://arxiv.org/pdf/1707.03237.pdf.
     """
+
     def __init__(self, normalization='sigmoid', epsilon=1e-6, ignore_index=255):
         super(GeneralizedDiceLoss, self).__init__()
         self.epsilon = epsilon
@@ -66,7 +67,7 @@ class GeneralizedDiceLoss(nn.Module):
             prediction = torch.cat((prediction, 1 - prediction), dim=0)
             target = torch.cat((target, 1 - target), dim=0)
         prediction = torch.transpose(output, 1, 0)
-        prediction = torch.flatten(prediction, 1) #flatten all dimensions except channel/class
+        prediction = torch.flatten(prediction, 1)  # flatten all dimensions except channel/class
         target = torch.transpose(target, 1, 0)
         target = torch.flatten(target, 1)
         target = target.float()
@@ -135,7 +136,8 @@ class LSCE_GDLoss(nn.Module):
         # print('gdice_loss', gdice_loss)
         # print('hd_loss', hd_loss)
 
-        return LSCE_loss + gdice_loss + 0.4 * hd_loss
+        # return 0.33 * LSCE_loss + 0.33 * gdice_loss + 0.33 * hd_loss
+        return 0.3923 * LSCE_loss + 0.3923 * gdice_loss + 0.2153 * hd_loss
         # return [LSCE_loss, gdice_loss, hd_loss]
 
 
@@ -145,15 +147,15 @@ class LSCE_GDLoss_GLW(nn.Module):
         super(LSCE_GDLoss_GLW, self).__init__()
         self.gdice = GeneralizedDiceLoss(ignore_index=ignore_index)
         self.LSCE = LabelSmoothSoftmaxCE(ignore_index=ignore_index)
-        self.hdloss = HDLoss(include_background=False, to_onehot_y=True, softmax=True, batch=True)
+        self.CEA = HDLoss(include_background=False, to_onehot_y=True, softmax=True, batch=True)
 
-    def forward(self, output, target):
+    def forward(self, output, target, lam):
         LSCE_loss = self.LSCE(output, target)
         gdice_loss = self.gdice(output, target)
-        hd_loss = self.hdloss(output, target)
-        # print('LSCE', LSCE_loss)
-        # print('gdice_loss', gdice_loss)
-        # print('hd_loss', hd_loss)
+        cea_loss = self.CEA(output, target)
+        # center_loss = self.Center(output, target)
+        # batch_weight = F.softmax(torch.randn(3), dim=-1)
+        # # loss = sum(torch.mul(losses, batch_weight))
+        # loss = LSCE_loss * batch_weight[0] + gdice_loss * batch_weight[1] + cea_loss * batch_weight[2]
 
-        # return LSCE_loss + gdice_loss + 0.4 * hd_loss
-        return [LSCE_loss, gdice_loss, hd_loss]
+        return LSCE_loss * lam, gdice_loss * lam, cea_loss * lam

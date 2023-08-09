@@ -63,7 +63,7 @@ class HirResNetDataset(Dataset):
     def __init__(self, root, mean, std, num_classes, mosaic_ratio, split='val',
                  img_size=ORIGIN_IMG_SIZE):
         self.root = root
-        self.img_suffix = '.tif'
+        self.img_suffix = '.png'
         self.mask_suffix = '.png'
 
         self.mode = split
@@ -183,8 +183,13 @@ class HiResNetDataLoader(DataLoader):
         # self.STD = [0.203334, 0.135546, 0.140651]
 
         # Potsdam
-        self.MEAN = [0.337606, 0.333821, 0.360477]
-        self.STD = [0.118292, 0.120414, 0.116505]
+        # self.MEAN = [0.337606, 0.333821, 0.360477]
+        # self.STD = [0.118292, 0.120414, 0.116505]
+
+        # loveda
+        self.MEAN = [0.280082, 0.299398, 0.307035]
+        self.STD = [0.127366, 0.109451, 0.115518]
+
         kwargs = {
             'root': data_dir,
             'split': split,

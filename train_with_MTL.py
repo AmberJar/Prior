@@ -27,7 +27,8 @@ from data.general_dataloder import General
 from data.hires_dataset import HiResNetDataLoader
 import datetime
 
-from LibMTL.weighting.RLW import RLW
+# from LibMTL-main.weighting.RLW import RLW
+from LibMTL.weighting import AlignedMTLBalancer
 
 
 def seed_everything(seed=0):
@@ -50,7 +51,7 @@ def setup(rank, world_size):
     os.environ['MASTER_PORT'] = '12345'
 
     # initialize the process group
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 
 def cleanup():
@@ -99,22 +100,17 @@ def main(rank, world_size, config):
         os.mkdir(net_path)
 
     # 加载模型，简易版
-    model = models.HiResNet(num_classes=num_classes, backbone='hrnet48', use_pretrained_backbone=cfg.use_checkpoint).to(rank)
+    model = models.HiResNet(num_classes=num_classes, backbone='hrnet48', use_pretrained_backbone=cfg.use_checkpoint).to(
+        rank)
 
     # 计算参数量
     total = sum([param.nelement() for param in model.parameters()])
     print('Number of parameter: % .2fM' % (total / 1e6))
 
     model = DDP(model, device_ids=[rank])
-    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    # model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     # 加载数据集
-    args = {
-        'data_dir': cfg.train_loader.data_dir,
-        'batch_size': cfg.batch_size,
-        'num_classes': num_classes,
-    }
-
     train_loader = HiResNetDataLoader(data_dir=cfg.train_loader.data_dir,
                                       batch_size=cfg.batch_size,
                                       split=cfg.train_loader.split,
@@ -125,7 +121,7 @@ def main(rank, world_size, config):
                                       augment=False)
 
     val_loader = HiResNetDataLoader(data_dir=cfg.val_loader.data_dir,
-                                    batch_size=cfg.batch_size*4,
+                                    batch_size=cfg.batch_size * 4,
                                     split=cfg.val_loader.split,
                                     num_workers=cfg.val_loader.num_workers,
                                     num_classes=num_classes,
@@ -177,6 +173,7 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
     log_step = cfg.trainer.log_per_iter
     num_classes = cfg.num_classes
     alpha = cfg.alpha
+    task_num = 3
     # 进度条设置
     if rank == 0:
         tbar = tqdm(train_loader, ncols=130)
@@ -186,7 +183,7 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
     # 数据记录初始化
     recorder = Recorder()
     recorder.reset_metrics()
-    RLW_fn = RLW(device=rank, scaler=scaler)
+    MTL_fn = AlignedMTLBalancer()
     for index, (images, labels) in enumerate(tbar):
         images = images.to(rank)
         labels = labels.to(rank)
@@ -247,8 +244,8 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
 
             # print('RIGHT')
             # torch.nan_to_num(loss, nan=1e-8)
-            loss, batch_weight = RLW_fn.backward(loss)
-            # optimizer.step()
+            # loss, batch_weight = RLW_fn.backward(loss)
+            optimizer.step()
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             scaler.step(optimizer)
@@ -261,54 +258,54 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
             cutmix_prob = 0.5
             beta = 1
 
-            if cfg.trainer.cutmix:
-                if beta > 0 and r < cutmix_prob:
-                    # generate mixed sample
-                    lam = np.random.beta(beta, beta)
-                    rand_index = torch.randperm(images.size()[0]).cuda()
-                    target_a = labels
-                    target_b = labels[rand_index]
-                    bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
-                    images[:, :, bbx1:bbx2, bby1:bby2] = images[rand_index, :, bbx1:bbx2, bby1:bby2]
-                    # adjust lambda to exactly match pixel ratio
-                    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (images.size()[-1] * images.size()[-2]))
+            if beta > 0 and r < cutmix_prob:
+                train_losses = torch.zeros(task_num).to(rank)
+                # generate mixed sample
+                lam = np.random.beta(beta, beta)
+                rand_index = torch.randperm(images.size()[0]).cuda()
+                target_a = labels
+                target_b = labels[rand_index]
+                bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
+                images[:, :, bbx1:bbx2, bby1:bby2] = images[rand_index, :, bbx1:bbx2, bby1:bby2]
+                # adjust lambda to exactly match pixel ratio
+                lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (images.size()[-1] * images.size()[-2]))
 
-                    out_aux, output = model(images)
-                    # output = model(images)
-                    # compute output
-
-                    loss1 = [item * lam for item in loss_fn(output, target_a)]
-                    loss2 = [item * (1. - lam) for item in loss_fn(output, target_a)]
-                    loss = [x + y for x, y in zip(loss1, loss2)]
-
-                    loss1 = [item * lam for item in loss_fn(out_aux, target_a)]
-                    loss2 = [item * (1. - lam) for item in loss_fn(out_aux, target_a)]
-                    loss_aux = [x + y for x, y in zip(loss1, loss2)]
-
-                    # loss = loss_fn(output, target_a) * lam + loss_fn(output, target_b) * (1. - lam)
-                    # loss_aux = loss_fn(out_aux, target_a) * lam + loss_fn(out_aux, target_b) * (1. - lam)
-                    loss = [alpha * x + y for x, y in zip(loss, loss_aux)]
-                else:
-                    # compute output
-                    out_aux, output = model(images)
-                    # output = model(images)
-                    loss_aux = loss_fn(out_aux, labels)
-                    loss = loss_fn(output, labels)
-                    # loss = alpha * loss_aux + loss
-                    loss = [alpha * x + y for x, y in zip(loss, loss_aux)]
-            else:
                 out_aux, output = model(images)
                 # output = model(images)
-                loss_aux = loss_fn(out_aux, labels)
-                loss = loss_fn(output, labels)
-                loss = alpha * loss_aux + loss
+                # compute output
 
-            loss, w = RLW_fn.backward(loss)
-            loss.backward()
+                celoss1, gdice_loss1, cea_loss1 = loss_fn(output, target_a, lam)
+                celoss2, gdice_loss2, cea_loss2 = loss_fn(output, target_b, 1 - lam)
+                # loss_aux = self.loss(out_aux, target_a) * lam + self.loss(out_aux, target_b) * (1. - lam)
+                celoss3, gdice_loss3, cea_loss3 = loss_fn(out_aux, target_a, lam)
+                celoss4, gdice_loss4, cea_loss4 = loss_fn(out_aux, target_b, 1 - lam)
+                train_losses[1] = gdice_loss1 + gdice_loss2 + gdice_loss3 + gdice_loss4
+                train_losses[0] = celoss1 + celoss2 + celoss3 + celoss4
+                train_losses[2] = cea_loss4 + cea_loss1 + cea_loss2 + cea_loss3
+            else:
+                # compute output
+                lam = 1
+                train_losses = torch.zeros(task_num).to(rank)
+                out_aux, output = model(images)
+                celoss1, gdice_loss1, cea_loss1 = loss_fn(output, labels, lam)
+                celoss2, gdice_loss2, cea_loss2 = loss_fn(out_aux, labels, lam)
+                train_losses[1] = gdice_loss1 + gdice_loss2
+                train_losses[0] = celoss1 + celoss2
+                train_losses[2] = cea_loss1 + cea_loss2
+
+            loss_dict = {
+                'celoss': train_losses[0],
+                'gdice': train_losses[1],
+                'cealoss': train_losses[2],
+            }
+
+            loss = MTL_fn.step(loss_dict, shared_params=list(model.module.backbone.parameters()))
+            # loss = losses.sum()
+            # loss.backward()
             optimizer.step()
 
         # 记录loss
-        recorder.total_loss.update(loss.item())
+        recorder.total_loss.update(loss)
 
         # 计算各项指标并上传
         seg_metrics = eval_metrics(output, labels, num_classes)
@@ -322,7 +319,7 @@ def train_epoch(rank, cfg, loaders, model, optimizer, loss_fn, scaler, epoch, nu
                     pixAcc, mIoU))
             if index % log_step == 0:
                 wrt_step = epoch * len(train_loader) + index
-                writer.add_scalar(f'{wrt_mode}/loss', loss.item(), wrt_step)
+                writer.add_scalar(f'{wrt_mode}/loss', loss, wrt_step)
 
     seg_metrics = recorder.get_seg_metrics(num_classes)
     if rank == 0:
@@ -355,8 +352,8 @@ def evaluate(rank, cfg, model, val_loader, loss_fn, epoch, num_classes, writer):
 
             out_aux, outs = model(images)
             # outs = model(images)
-            loss_aux = loss_fn(out_aux, labels)
-            loss = loss_fn(outs, labels)
+            loss_aux = loss_fn(out_aux, labels, 1)
+            loss = loss_fn(outs, labels, 1)
             loss = loss_aux + loss
 
             # 记录loss

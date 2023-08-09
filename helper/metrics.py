@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -42,9 +44,13 @@ class AverageMeter(object):
         return np.round(self.avg, 5)
 
 
-def batch_pix_accuracy(predict, target, labeled):
+def batch_pix_accuracy(predict, target, labeled, num_classes):
     pixel_labeled = labeled.sum()
     pixel_correct = ((predict == target) * labeled).sum()
+    # banned_pixels = num_classes - 1
+    # pixel_labeled = labeled[labeled != banned_pixels].sum()
+    # pixel_correct = ((predict == target) * labeled)[torch.where(labeled != banned_pixels)].sum()
+
     assert pixel_correct <= pixel_labeled, "Correct area should be smaller " \
                                            "than Labeled "
     return pixel_correct.cpu().numpy(), pixel_labeled.cpu().numpy()
@@ -72,7 +78,7 @@ def eval_metrics(output, target, num_class):
     target = target + 1
 
     labeled = (target > 0) * (target <= num_class)
-    correct, num_labeled = batch_pix_accuracy(predict, target, labeled)
+    correct, num_labeled = batch_pix_accuracy(predict, target, labeled, num_class)
     inter, union = batch_intersection_union(predict, target, num_class, labeled)
     return [np.round(correct, 5), np.round(num_labeled, 5), np.round(inter, 5),
             np.round(union, 5)]

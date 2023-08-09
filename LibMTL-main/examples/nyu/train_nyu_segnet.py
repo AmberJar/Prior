@@ -1,10 +1,13 @@
-import torch
+import torch, argparse
 import torch.nn as nn
+import torch.nn.functional as F
 
+from utils import *
 from segnet_mtan import SegNet_MTAN_encoder, SegNet_MTAN_decoder
 from create_dataset import NYUv2
 
 from LibMTL import Trainer
+from LibMTL.model import resnet_dilated
 from LibMTL.utils import set_random_seed, set_device
 from LibMTL.config import LibMTL_args, prepare_args
 import LibMTL.weighting as weighting_method
