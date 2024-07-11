@@ -38,3 +38,4 @@ if __name__ == '__main__':
     print('hd_gpu cost', time.time() - start)
     print(loss)
     print(loss2)
+    # make something new
